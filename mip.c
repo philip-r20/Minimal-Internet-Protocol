@@ -49,10 +49,16 @@ void mip_hdr_pack(const struct mip_hdr *hdr, uint8_t *buf)
  */
 void mip_hdr_unpack(const uint8_t *buf, struct mip_hdr *hdr)
 {
-	/* TODO(you): the inverse of mip_hdr_pack():
-	 * memcpy into a uint32_t, ntohl(), then shift and mask each field. */
-	(void)buf;
-	memset(hdr, 0, sizeof(*hdr));
+	uint32_t word;
+
+	memcpy(&word, buf, MIP_HDR_LEN);
+	word = ntohl(word);
+
+	hdr->dst = word >> 24;
+	hdr->src = word >> 16;
+	hdr->ttl = (word >> 12) & 0xF;
+	hdr->sdu_len = (word >> 3) & 0x1FF;
+	hdr->sdu_type = word & 0x7;
 }
 
 /**
