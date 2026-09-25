@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "common.h"
+#include <arpa/inet.h>
 
 /* The MIP-ARP cache: one slot per possible MIP address (0..255).
  * Indexing by address makes lookup O(1) and needs no search code. */
@@ -26,15 +27,16 @@ static struct arp_entry arp_cache[256];
  */
 void mip_hdr_pack(const struct mip_hdr *hdr, uint8_t *buf)
 {
-	/* TODO(you):
-	 * Hint: build one uint32_t word by shifting each field into place:
-	 *   word = dst << 24 | src << 16 | (ttl & 0xF) << 12 | ...
-	 * then convert with htonl() and memcpy() it into buf.
-	 * Work out the shift amounts for sdu_len and sdu_type yourself
-	 * (4 + 9 + 3 = 16 bits share the lower half).
-	 */
-	(void)hdr;
-	memset(buf, 0, MIP_HDR_LEN);
+	uint32_t word;
+
+	word = (uint32_t)hdr->dst << 24;
+	word |= (uint32_t)hdr->src << 16;
+	word |= ((uint32_t)hdr->ttl & 0xF) << 12;
+	word |= ((uint32_t)hdr->sdu_len & 0x1FF) << 3;
+	word |= (uint32_t)hdr->sdu_type & 0x7;
+
+	word = htonl(word);
+	memcpy(buf, &word, MIP_HDR_LEN);
 }
 
 /**
