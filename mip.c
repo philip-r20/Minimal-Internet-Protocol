@@ -1,8 +1,5 @@
 /*
  * mip.c - MIP header and MIP-ARP message encoding, plus the MIP-ARP cache.
- *
- * Everything marked TODO is yours to write. The function signatures and
- * comments describe exactly what each function must do.
  */
 
 #include <stdio.h>
@@ -75,10 +72,13 @@ void mip_hdr_unpack(const uint8_t *buf, struct mip_hdr *hdr)
  */
 void mip_arp_pack(uint8_t type, uint8_t addr, uint8_t *buf)
 {
-	/* TODO(you): same technique as mip_hdr_pack(). */
-	(void)type;
-	(void)addr;
-	memset(buf, 0, MIP_ARP_LEN);
+	uint32_t word;
+
+	word = (uint32_t)type << 31;
+	word |= ((uint32_t)addr & 0xFFFF) << 23;
+
+	word = htonl(word);
+	memcpy(buf, &word, MIP_ARP_LEN);
 }
 
 /**
@@ -92,10 +92,13 @@ void mip_arp_pack(uint8_t type, uint8_t addr, uint8_t *buf)
  */
 void mip_arp_unpack(const uint8_t *buf, uint8_t *type, uint8_t *addr)
 {
-	/* TODO(you) */
-	(void)buf;
-	*type = 0;
-	*addr = 0;
+	uint32_t word;
+
+	memcpy(&word, buf, MIP_ARP_LEN);
+	word = ntohl(word);
+
+	*type = word >> 31;
+	*addr = (word >> 23) & 0xFF;
 }
 
 /**
@@ -121,10 +124,11 @@ void arp_cache_init(void)
  */
 void arp_cache_insert(uint8_t mip, const uint8_t *mac, int ifindex)
 {
-	/* TODO(you): fill arp_cache[mip] and mark it valid. */
-	(void)mip;
-	(void)mac;
-	(void)ifindex;
+	struct arp_entry entry;
+	entry.valid = 1;
+	memcpy(entry.mac, mac, ETH_ALEN);
+	entry.ifindex = ifindex;
+	arp_cache[mip] = entry;
 }
 
 /**
@@ -136,8 +140,9 @@ void arp_cache_insert(uint8_t mip, const uint8_t *mac, int ifindex)
  */
 const struct arp_entry *arp_cache_lookup(uint8_t mip)
 {
-	/* TODO(you) */
-	(void)mip;
+	if (arp_cache[mip].valid) {
+		return &arp_cache[mip];
+	}
 	return NULL;
 }
 
@@ -150,7 +155,11 @@ const struct arp_entry *arp_cache_lookup(uint8_t mip)
  */
 void arp_cache_print(void)
 {
-	/* TODO(you): loop over all 256 slots, print the valid ones.
-	 * print_mac() from link.c prints a MAC address for you. */
-	printf("[ARP cache] (not implemented yet)\n");
+	for (int i = 0; i <= 255; ++i) {
+		if (arp_cache_lookup(i) != NULL) {
+			printf("%d -> ", i);
+			print_mac(arp_cache[i].mac);
+			printf(" (ifindex %d)\n", arp_cache[i].ifindex);
+		}
+	}
 }
