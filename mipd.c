@@ -96,15 +96,29 @@ static int send_pdu(struct iface *ifc, const uint8_t *dst_mac,
 		    const struct mip_hdr *hdr, const uint8_t *sdu,
 		    size_t sdu_len)
 {
-	/* TODO(you):
-	 *  1. uint8_t pdu[MIP_HDR_LEN + MIP_MAX_SDU_LEN];
-	 *  2. mip_hdr_pack(hdr, pdu); memcpy SDU after the header
-	 *  3. send_frame(raw_fd, ifc, dst_mac, pdu, MIP_HDR_LEN + sdu_len)
-	 *  4. if (debug): print src/dst MAC, src/dst MIP, arp_cache_print()
-	 */
-	(void)ifc; (void)dst_mac; (void)hdr; (void)sdu; (void)sdu_len;
-	return -1;
+	if (sdu_len > MIP_MAX_SDU_LEN) {
+		return -1;
+	}
+	uint8_t pdu[MIP_HDR_LEN + MIP_MAX_SDU_LEN];
+	mip_hdr_pack(hdr, pdu);
+	memcpy(pdu + MIP_HDR_LEN, sdu, sdu_len);
+
+	if (send_frame(raw_fd, ifc, dst_mac, pdu, MIP_HDR_LEN + sdu_len) < 0) {
+		return -1;
+	}
+	if (debug) {
+		printf("[mipd] sent PDU src MAC ");
+		print_mac(ifc->mac);
+		printf(" dst MAC ");
+		print_mac(dst_mac);
+		printf("\n");
+		printf("[mipd] src MIP %d ", hdr->src);
+		printf("dst MIP %d\n", hdr->dst);
+		arp_cache_print();
+	}
+	return 0;
 }
+
 
 /**
  * Broadcast a MIP-ARP request for a MIP address on ALL interfaces.
