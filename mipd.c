@@ -129,11 +129,20 @@ static int send_pdu(struct iface *ifc, const uint8_t *dst_mac,
  */
 static void send_arp_request(uint8_t target)
 {
-	/* TODO(you): spec 6.1.1 - MIP dst = 0xFF, SDU type = ARP,
-	 * TTL = 1, SDU = mip_arp_pack(MIP_ARP_REQUEST, target, ...),
-	 * sdu_len = 1 word. Send to BCAST_MAC on every interface. */
-	(void)target;
-	(void)BCAST_MAC;
+	uint8_t sdu[MIP_ARP_LEN];
+	struct mip_hdr hdr;
+
+	mip_arp_pack(MIP_ARP_REQUEST, target, sdu);
+
+	hdr.dst = MIP_BROADCAST;
+	hdr.src = my_mip;
+	hdr.ttl = MIP_TTL_DEFAULT;
+	hdr.sdu_len = 1;
+	hdr.sdu_type = MIP_SDU_ARP;
+
+	for (int i = 0; i < n_ifs; i++) {
+		send_pdu(&ifs[i], BCAST_MAC, &hdr, sdu, MIP_ARP_LEN);
+	}
 }
 
 /**
@@ -159,7 +168,7 @@ static void handle_app_msg(const uint8_t *msg, size_t len)
 	 *               It is sent later, when the ARP response arrives.
 	 */
 	(void)msg; (void)len; (void)pending;
-	(void)send_pdu; (void)send_arp_request; /* remove once used */
+	(void)send_arp_request; /* remove once used */
 }
 
 /**
