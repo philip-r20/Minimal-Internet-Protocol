@@ -156,19 +156,44 @@ static void send_arp_request(uint8_t target)
  */
 static void handle_app_msg(const uint8_t *msg, size_t len)
 {
-	/* TODO(you):
-	 *  1. dst = msg[0]; payload = msg + 1, payload_len = len - 1
-	 *  2. Copy payload into a buffer and pad with zeros up to a
-	 *     multiple of 4 (spec 5.2). Reject if > MIP_MAX_SDU_LEN.
-	 *  3. Look up dst in the ARP cache:
-	 *       hit  -> build header (src = my_mip, type = PING,
-	 *               sdu_len = bytes / 4) and send_pdu() on the cached
-	 *               interface to the cached MAC.
-	 *       miss -> save the SDU in `pending` and send_arp_request(dst).
-	 *               It is sent later, when the ARP response arrives.
-	 */
-	(void)msg; (void)len; (void)pending;
-	(void)send_arp_request; /* remove once used */
+	if (len - 1 > MIP_MAX_SDU_LEN) {
+		fprintf(stderr, "mipd: message too large\n");
+		return;
+	}
+	uint8_t dst = msg[0];
+	size_t payload_len = len - 1;
+	size_t sdu_len = ((payload_len + 3) / 4) * 4;
+	uint8_t sdu[MIP_MAX_SDU_LEN];
+
+	memset(sdu, 0, sizeof(sdu));
+	memcpy(sdu, msg + 1, payload_len);
+
+	const struct arp_entry *entry = arp_cache_lookup(dst);
+	if (entry != NULL) {
+		struct mip_hdr hdr;
+
+		hdr.dst = dst;
+		hdr.src = my_mip;
+		hdr.ttl = MIP_TTL_DEFAULT;
+		hdr.sdu_len = sdu_len / 4;
+		hdr.sdu_type = MIP_SDU_PING;
+
+		struct iface *ifc = find_iface(entry->ifindex);
+		if (ifc == NULL) {
+			fprintf(stderr, "mipd: no interface for ifindex %d\n", entry->ifindex);
+			return;
+		}
+		if (send_pdu(ifc, entry->mac, &hdr, sdu, sdu_len) < 0) {
+			fprintf(stderr, "mipd: send_pdu failed\n");
+			return;
+		} 
+	} else {
+		pending.active = 1;
+		pending.dst = dst;
+		memcpy(pending.sdu, sdu, sdu_len);
+		pending.sdu_len = sdu_len;
+		send_arp_request(dst);
+	}
 }
 
 /**
