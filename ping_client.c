@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 
 	uint8_t src = reply[0];
 	char* text = (char*)reply + 1;
-	if (strncmp(text, "PONG:", 5) == 0 && strcmp(text + 5, message) - 5) == 0) {
+	if (strncmp(text, "PONG:", 5) == 0 && strcmp(text + 5, message) == 0) {
 		printf("reply received from %d: %s\n", src, text);
 		printf("elapsed time in ms: %.3f\n", elapsed_ms(&start, &end));
 	} else {
