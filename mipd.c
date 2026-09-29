@@ -2,15 +2,6 @@
  * mipd.c - the MIP daemon.
  *
  * Usage: mipd [-h] [-d] <socket_upper> <MIP address>
- *
- * DONE:  argument parsing, socket setup, the epoll event loop, receiving
- *        from the raw socket and the UNIX socket.
- * TODO:  everything that implements MIP / MIP-ARP behaviour, marked
- *        "TODO(you)" below. Suggested order:
- *          1. mip.c: header + ARP packing, ARP cache
- *          2. send_pdu()
- *          3. handle_app_msg()  (+ send_arp_request())
- *          4. handle_pdu()      (ARP request, ARP response, ping)
  */
 
 #include <stdio.h>
@@ -209,25 +200,87 @@ static void handle_app_msg(const uint8_t *msg, size_t len)
 static void handle_pdu(const uint8_t *src_mac, int ifindex,
 		       const uint8_t *pdu, size_t len)
 {
-	/* TODO(you):
-	 *  1. len < MIP_HDR_LEN? drop. mip_hdr_unpack().
-	 *  2. Check the header: sdu_len*4 must fit in len - MIP_HDR_LEN;
-	 *     dst must be my_mip or 0xFF; else drop.
-	 *  3. if (debug) log MACs, MIP addresses, ARP cache.
-	 *  4. switch (hdr.sdu_type):
-	 *     ARP:  mip_arp_unpack()
-	 *       REQUEST for my_mip:
-	 *         - learn sender: arp_cache_insert(hdr.src, src_mac, ifindex)
-	 *         - reply with RESPONSE (unicast back to src_mac, same iface)
-	 *       RESPONSE:
-	 *         - arp_cache_insert(hdr.src, src_mac, ifindex)
-	 *         - if pending.active && pending.dst == hdr.src: send it now
-	 *     PING:
-	 *       - if app_fd != -1: send [hdr.src][SDU] to the app
-	 *         (one send() call - SEQPACKET keeps it as one message)
-	 */
-	(void)src_mac; (void)ifindex; (void)pdu; (void)len;
-	(void)find_iface; /* you will need this to turn an ifindex into an iface */
+	if (len < MIP_HDR_LEN) {
+		return;
+	}
+	struct mip_hdr hdr;
+	mip_hdr_unpack(pdu, &hdr);
+	if (hdr.sdu_len * 4 > len - MIP_HDR_LEN) {
+		return;
+	}
+	if (hdr.dst != MIP_BROADCAST && hdr.dst != my_mip) {
+		return;
+	}
+	if (debug) {
+		printf("[mipd] received PDU\n");
+		printf("[mipd] src MAC: ");
+		print_mac(src_mac);
+		printf("\n");
+		printf("[mipd] ifindex: %d\n", ifindex);
+		printf("[mipd] MIP src: %d\n", hdr.src);
+		printf("[mipd] MIP dst: %d\n", hdr.dst);
+		arp_cache_print();
+	}
+
+	const uint8_t *sdu = pdu + MIP_HDR_LEN;
+	size_t sdu_bytes = hdr.sdu_len * 4;
+
+	if (hdr.sdu_type == MIP_SDU_PING) {
+		if (app_fd == -1) {
+			return;
+		}
+		uint8_t out[MAX_IPC_LEN];
+		out[0] = hdr.src;
+		memcpy(out + 1, sdu, sdu_bytes);
+		if (send(app_fd, out, sdu_bytes + 1, 0) < 0) {
+			perror("send");
+		}
+	} else if (hdr.sdu_type == MIP_SDU_ARP) {
+		if (sdu_bytes < MIP_ARP_LEN) {
+			return;
+		}
+		uint8_t type, addr;
+		mip_arp_unpack(sdu, &type, &addr);
+
+		if (type == MIP_ARP_REQUEST && addr == my_mip) {
+			arp_cache_insert(hdr.src, src_mac, ifindex);
+			uint8_t buf[MIP_ARP_LEN];
+			mip_arp_pack(MIP_ARP_RESPONSE, my_mip, buf);
+
+			struct iface *ifc = find_iface(ifindex);
+			if (ifc == NULL) {
+				return;
+			}
+
+			struct mip_hdr out_hdr;
+			out_hdr.dst = hdr.src;
+			out_hdr.src = my_mip;
+			out_hdr.ttl = MIP_TTL_DEFAULT;
+			out_hdr.sdu_len = 1;
+			out_hdr.sdu_type = MIP_SDU_ARP;
+
+			send_pdu(ifc, src_mac, &out_hdr, buf, MIP_ARP_LEN);
+		} else if (type == MIP_ARP_RESPONSE) {
+			arp_cache_insert(hdr.src, src_mac, ifindex);
+			if (pending.active && pending.dst == hdr.src) {
+				struct iface *ifc = find_iface(ifindex);
+				if (ifc == NULL) {
+					return;
+				}
+				
+				struct mip_hdr out_hdr;
+				out_hdr.dst = hdr.src;
+				out_hdr.src = my_mip;
+				out_hdr.ttl = MIP_TTL_DEFAULT;
+				out_hdr.sdu_len = pending.sdu_len / 4;
+				out_hdr.sdu_type = MIP_SDU_PING;
+
+				send_pdu(ifc, src_mac, &out_hdr, pending.sdu, pending.sdu_len);
+				pending.active = 0;
+			}
+		}
+
+	}
 }
 
 /**
