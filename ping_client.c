@@ -72,23 +72,56 @@ int main(int argc, char *argv[])
 	if (fd == -1)
 		return EXIT_FAILURE;
 
-	/* TODO(you):
-	 *  1. Build the IPC message: buf[0] = dst, then "PING:" + message,
-	 *     including the terminating '\0' (so the receiver can treat the
-	 *     zero-padded SDU as a C string). Check it fits in MAX_IPC_LEN.
-	 *  2. Set a 1 second receive timeout:
-	 *       struct timeval tv = { .tv_sec = 1 };
-	 *       setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	 *  3. clock_gettime(CLOCK_MONOTONIC, &start); send(fd, buf, len, 0);
-	 *  4. recv(): -1 with errno EAGAIN/EWOULDBLOCK -> print "timeout".
-	 *     Otherwise reply[0] is the sender, reply + 1 is the SDU.
-	 *     If it is "PONG:" + message -> clock_gettime(&end), print
-	 *     elapsed_ms(). Unknown messages: ignore and keep waiting
-	 *     (bonus: shrink the timeout by the time already spent).
-	 */
-	(void)message;
-	(void)elapsed_ms;
+	uint8_t buf[MAX_IPC_LEN + 1];
+	size_t len = 1 + 5 + strlen(message) + 1;
+	if (len > MAX_IPC_LEN) {
+		fprintf(stderr, "ping_client: message too long\n");
+		close(fd);
+		return EXIT_FAILURE;
+	}
+	buf[0] = dst;
+	memcpy(buf + 1, "PING:", 5);
+	memcpy(buf + 6, message, strlen(message) + 1);
 
+	struct timespec start, end;
+	struct timeval tv = { .tv_sec = 1 };
+	if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+		perror("setsockopt");
+		close(fd);
+		return EXIT_FAILURE;
+	}
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	if (send(fd, buf, len, 0) < 0) {
+		perror("send");
+		close(fd);
+		return EXIT_FAILURE;
+	}
+
+	uint8_t reply[MAX_IPC_LEN + 1];
+	ssize_t n = recv(fd, reply, MAX_IPC_LEN, 0);
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	if (n < 0) {
+		printf("timeout\n");
+		close(fd);
+		return EXIT_FAILURE;
+	}
+	if (n == 0) {
+		fprintf(stderr, "ping_client: mipd closed the connection\n");
+		close(fd);
+		return EXIT_FAILURE;
+	}
+	reply[n] = '\0';
+
+	uint8_t src = reply[0];
+	char* text = (char*)reply + 1;
+	if (strncmp(text, "PONG:", 5) == 0 && strcmp(text + 5, message) - 5) == 0) {
+		printf("reply received from %d: %s\n", src, text);
+		printf("elapsed time in ms: %.3f\n", elapsed_ms(&start, &end));
+	} else {
+		fprintf(stderr, "ping_client: unexpected reply: %s\n", text);
+		close(fd);
+		return EXIT_FAILURE;
+	}
 	close(fd);
 	return EXIT_SUCCESS;
 }
