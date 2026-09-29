@@ -48,15 +48,29 @@ int main(int argc, char *argv[])
 	if (fd == -1)
 		return EXIT_FAILURE;
 
-	/* TODO(you): loop forever:
-	 *  1. n = recv(fd, buf, MAX_IPC_LEN, 0); n <= 0 -> mipd gone, break.
-	 *  2. src = buf[0]; text = buf + 1. Make sure it is '\0'-terminated
-	 *     (buf[n] = '\0' if you left room for it).
-	 *  3. Print it (and fflush(stdout) - it runs in an xterm).
-	 *  4. If it starts with "PING:", reply with
-	 *     reply[0] = src, then "PONG:" + (text + 5) + '\0', one send().
-	 */
+	uint8_t buf[MAX_IPC_LEN + 1];
+	while (1) {
+		ssize_t n = recv(fd, buf, MAX_IPC_LEN, 0);
+		if (n <= 0) {
+			break;
+		}
+		buf[n] = '\0';
+		uint8_t src = buf[0];
+		char* text = (char*)buf + 1;
+		
+		printf("ping_server received from %d: %s\n", src, text);
+		fflush(stdout);
 
+		if (strncmp(text, "PING:", 5) == 0) {
+			uint8_t reply[MAX_IPC_LEN + 1];
+			reply[0] = src;
+			memcpy(reply + 1, "PONG:", 5);
+			memcpy(reply + 6, text + 5, strlen(text + 5) + 1);
+			if (send(fd, reply, 1 + 5 + strlen(text + 5) + 1, 0) < 0) {
+				perror("send");
+			}
+		}
+	}
 	close(fd);
 	return EXIT_SUCCESS;
 }
