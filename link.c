@@ -1,8 +1,5 @@
 /*
  * link.c - Ethernet (link layer) access through an AF_PACKET raw socket.
- *
- * This file is complete: it is plumbing, not protocol logic. Read it
- * anyway - you must be able to explain it in a spot check.
  */
 
 #include <stdio.h>
@@ -10,9 +7,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <ifaddrs.h>
-#include <arpa/inet.h>          /* htons */
+#include <arpa/inet.h>          
 #include <sys/socket.h>
-#include <linux/if_packet.h>    /* struct sockaddr_ll */
+#include <linux/if_packet.h>    
 #include "common.h"
 
 /**

@@ -1,6 +1,6 @@
 /*
  * ping_client.c - send "PING:<message>" to a MIP host, wait up to 1 s
- * for "PONG:<message>", print the RTT or "timeout".
+ * for "PONG:<message>", print the RTT or "ping timeout".
  *
  * Usage: ping_client [-h] <socket_lower> <message> <destination_host>
  */
@@ -45,7 +45,7 @@ static double elapsed_ms(const struct timespec *a, const struct timespec *b)
  * Parse arguments, send the ping, wait for the reply.
  *
  * Global variables: none.
- * Returns EXIT_SUCCESS on reply or timeout, EXIT_FAILURE on errors.
+ * Returns EXIT_SUCCESS on expected reply, EXIT_FAILURE on timeout, wrong reply or errors.
  */
 int main(int argc, char *argv[])
 {
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
 	ssize_t n = recv(fd, reply, MAX_IPC_LEN, 0);
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	if (n < 0) {
-		printf("timeout\n");
+		printf("ping timeout\n");
 		close(fd);
 		return EXIT_FAILURE;
 	}

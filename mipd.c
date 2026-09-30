@@ -13,23 +13,22 @@
 #include <sys/socket.h>
 #include "common.h"
 
-#define MAX_EVENTS 8
+#define MAX_EVENTS 8 /* max events handled per epoll_wait() call */ 
 
-/* ---------- Global state (documented as required) ---------- */
+static int     debug; /* 1 if -d was given: log every packet */
+static uint8_t my_mip; /* this host's MIP address */
 
-static int     debug;              /* 1 if -d was given: log every packet */
-static uint8_t my_mip;             /* this host's MIP address */
+static struct iface ifs[MAX_IFS]; /* local Ethernet interfaces */
+static int     n_ifs; /* number of valid entries in ifs */
 
-static struct iface ifs[MAX_IFS];  /* local Ethernet interfaces */
-static int     n_ifs;              /* number of valid entries in ifs */
+static int     raw_fd = -1; /* AF_PACKET socket for MIP frames */
+static int     listen_fd = -1; /* UNIX listening socket */
+static int     app_fd = -1; /* connected application, -1 if none */
 
-static int     raw_fd = -1;        /* AF_PACKET socket for MIP frames */
-static int     listen_fd = -1;     /* UNIX listening socket */
-static int     app_fd = -1;        /* connected application, -1 if none */
-
-/* A datagram waiting for a MIP-ARP response before it can be sent.
- * One slot is enough: only one app is connected and it sends one ping
- * at a time. */
+/** 
+ * A ping waiting for a MIP-ARP response before it can be sent. 
+ * One slot is enough: only one app is connected and it sends one ping at a time. 
+ */
 static struct {
 	int     active;                /* 1 while waiting for ARP */
 	uint8_t dst;                   /* MIP address we are resolving */
@@ -37,8 +36,8 @@ static struct {
 	size_t  sdu_len;               /* SDU length in BYTES, multiple of 4 */
 } pending;
 
-static const uint8_t BCAST_MAC[ETH_ALEN] = {0xff,0xff,0xff,0xff,0xff,0xff};
-
+/* Ethernet broadcast address, used for MIP-ARP requests */
+static const uint8_t BCAST_MAC[ETH_ALEN] = {0xff,0xff,0xff,0xff,0xff,0xff}; 
 /**
  * Print usage.
  * prog: program name (argv[0]).
@@ -57,7 +56,7 @@ static void usage(const char *prog)
 
 /**
  * Find a local interface by kernel index.
- * ifindex: interface index (e.g. from recv_frame() or the ARP cache).
+ * ifindex: kernel interface index to look for.
  *
  * Global variables: ifs, n_ifs (read only).
  * Returns a pointer into ifs, or NULL if unknown.
@@ -72,11 +71,11 @@ static struct iface *find_iface(int ifindex)
 
 /**
  * Build a MIP PDU (header + SDU) and send it in one Ethernet frame.
- * ifc:      interface to send on.
- * dst_mac:  destination MAC address.
- * hdr:      MIP header to use (sdu_len must already be in 32-bit words).
- * sdu:      SDU bytes.
- * sdu_len:  SDU length in bytes (multiple of 4).
+ * ifc: interface to send on.
+ * dst_mac: destination MAC address.
+ * hdr: MIP header to use.
+ * sdu: SDU bytes.
+ * sdu_len: SDU length in bytes (multiple of 4).
  *
  * In debug mode, logs MAC and MIP addresses and the ARP cache.
  *
@@ -137,12 +136,14 @@ static void send_arp_request(uint8_t target)
 }
 
 /**
- * Handle one message from the application: [dst MIP][SDU...].
- * msg: the received bytes.
- * len: number of bytes received (>= 1).
+ * Handle one message from the application. msg is [dst MIP][SDU]. 
+ * The SDU is padded to a multiple of 4. If dst is in the ARP cache, it's sent at once,
+ * otherwise it's stored in pending and an ARP request is broadcast.
  *
- * Global variables: my_mip, pending (written if the destination's MAC is
- * unknown).
+ * msg: the received bytes.
+ * len: number of bytes received.
+ *
+ * Global variables: my_mip, pending (written if the destination's MAC is unknown).
  * Returns nothing. Too-large messages are dropped with an error message.
  */
 static void handle_app_msg(const uint8_t *msg, size_t len)
@@ -188,14 +189,18 @@ static void handle_app_msg(const uint8_t *msg, size_t len)
 }
 
 /**
- * Handle one received MIP PDU.
+ * Handle one received MIP PDU. Validates the header, then:
+ * - ARP requests for our address: learn the sender and send an ARP response.
+ * - ARP response: learn the sender and send the pending ping if it was waiting for that address.
+ * - Ping: pass [src MIP][SDU] to the connected application, if any.
+ *
  * src_mac: source MAC of the Ethernet frame.
  * ifindex: interface it arrived on.
  * pdu:     MIP PDU (starts with the MIP header).
  * len:     PDU length in bytes.
  *
  * Global variables: my_mip, app_fd, pending, debug (and the ARP cache).
- * Returns nothing. Malformed or foreign PDUs are silently dropped.
+ * Returns nothing. Incorrectly formated or foreign PDUs are silently dropped.
  */
 static void handle_pdu(const uint8_t *src_mac, int ifindex,
 		       const uint8_t *pdu, size_t len)
@@ -297,7 +302,7 @@ static void on_raw_readable(void)
 	ssize_t n = recv_frame(raw_fd, frame, sizeof(frame), &ifindex);
 
 	if (n <= (ssize_t)sizeof(*eth))
-		return; /* error, our own outgoing frame, or runt */
+		return; 
 
 	handle_pdu(eth->ether_shost, ifindex,
 		   frame + sizeof(*eth), (size_t)n - sizeof(*eth));
@@ -306,6 +311,8 @@ static void on_raw_readable(void)
 /**
  * Read one message from the connected application.
  * Detects a disconnect (recv returns 0) and forgets the app.
+ *
+ * epfd: epoll instance; the app's fd is removed from it on disconnect.
  *
  * Global variables: app_fd (closed and set to -1 on disconnect).
  * Returns nothing.
@@ -436,6 +443,6 @@ int main(int argc, char *argv[])
 			else if (fd == app_fd)
 				on_app_readable(epfd);
 		}
-		fflush(stdout); /* xterm in mininet: show output promptly */
+		fflush(stdout); 
 	}
 }

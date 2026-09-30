@@ -7,8 +7,7 @@
 #include "common.h"
 #include <arpa/inet.h>
 
-/* The MIP-ARP cache: one slot per possible MIP address (0..255).
- * Indexing by address makes lookup O(1) and needs no search code. */
+/* The MIP-ARP cache: one slot per possible MIP address (0..255). */
 static struct arp_entry arp_cache[256];
 
 /**
@@ -16,11 +15,11 @@ static struct arp_entry arp_cache[256];
  * hdr: pointer to the unpacked header to encode.
  * buf: output buffer, must be at least MIP_HDR_LEN (4) bytes.
  *
- * Wire layout (most significant bit first, network byte order):
+ * Layout:
  *   | dst 8 | src 8 | ttl 4 | sdu_len 9 | sdu_type 3 |
  *
  * Global variables: none.
- * Returns nothing. Fields wider than their wire width are truncated.
+ * Returns nothing.
  */
 void mip_hdr_pack(const struct mip_hdr *hdr, uint8_t *buf)
 {
@@ -59,13 +58,12 @@ void mip_hdr_unpack(const uint8_t *buf, struct mip_hdr *hdr)
 }
 
 /**
- * Encode a MIP-ARP message (spec section 6.1).
- * type: MIP_ARP_REQUEST or MIP_ARP_RESPONSE (1 bit on the wire).
+ * Encode a MIP-ARP message.
+ * type: MIP_ARP_REQUEST or MIP_ARP_RESPONSE.
  * addr: MIP address being looked up (request) or that matched (response).
  * buf:  output buffer, at least MIP_ARP_LEN (4) bytes.
  *
  * Layout: | type 1 | addr 8 | 23 zero bits |
- * Note: addr is NOT byte-aligned - it straddles the first two bytes.
  *
  * Global variables: none.
  * Returns nothing.
@@ -104,7 +102,7 @@ void mip_arp_unpack(const uint8_t *buf, uint8_t *type, uint8_t *addr)
 /**
  * Empty the MIP-ARP cache.
  *
- * Global variables: arp_cache (all entries cleared).
+ * Global variables: arp_cache.
  * Returns nothing.
  */
 void arp_cache_init(void)
@@ -114,13 +112,12 @@ void arp_cache_init(void)
 
 /**
  * Add or overwrite the cache entry for a MIP address.
- * mip:     the neighbour's MIP address.
- * mac:     the neighbour's MAC address (ETH_ALEN bytes).
+ * mip: the neighbour's MIP address.
+ * mac: the neighbour's MAC address (ETH_ALEN bytes).
  * ifindex: local interface on which the neighbour was heard.
  *
- * Global variables: arp_cache (entry for mip is written).
- * Returns nothing. Overwriting an existing entry is intended: the newest
- * information wins.
+ * Global variables: arp_cache.
+ * Returns nothing. 
  */
 void arp_cache_insert(uint8_t mip, const uint8_t *mac, int ifindex)
 {
@@ -135,7 +132,7 @@ void arp_cache_insert(uint8_t mip, const uint8_t *mac, int ifindex)
  * Look up a MIP address in the cache.
  * mip: address to look up.
  *
- * Global variables: arp_cache (read only).
+ * Global variables: arp_cache.
  * Returns a pointer to the entry, or NULL if there is no valid entry.
  */
 const struct arp_entry *arp_cache_lookup(uint8_t mip)
@@ -147,10 +144,10 @@ const struct arp_entry *arp_cache_lookup(uint8_t mip)
 }
 
 /**
- * Print every valid cache entry as "MIP -> MAC (ifindex)".
+ * Print every valid cache entry.
  * Used in debug mode, as required by the assignment.
  *
- * Global variables: arp_cache (read only).
+ * Global variables: arp_cache.
  * Returns nothing.
  */
 void arp_cache_print(void)

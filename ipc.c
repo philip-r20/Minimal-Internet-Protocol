@@ -1,10 +1,8 @@
 /*
  * ipc.c - UNIX domain socket helpers (the MIP <-> application interface).
  *
- * SOCK_SEQPACKET is used because it is connection-oriented (we notice
- * when the app exits) AND keeps message boundaries, so one send() on one
- * side is exactly one recv() on the other. That fits the assignment's
- * "one message = [MIP address][SDU]" format without extra framing.
+ * SOCK_SEQPACKET keeps message boundaries (one send() = one recv()) and is
+ * connection-oriented, so mipd notices when the application exits.
  */
 
 #include <stdio.h>
@@ -66,7 +64,7 @@ int unix_listen(const char *path)
 }
 
 /**
- * Connect to the daemon's UNIX socket (used by the ping apps).
+ * Connect to the daemon's UNIX socket.
  * path: filesystem path the daemon bound.
  *
  * Global variables: none.
